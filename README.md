@@ -46,7 +46,7 @@ public class Calculator {
 
 Will generate
 
-`Observable<T> setAge(T toReturn, int age)`
+`Observable<T> addOne(int age)`
 
 Accessible through `Rx.observeCalculator()`
 
