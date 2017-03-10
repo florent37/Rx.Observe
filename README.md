@@ -71,7 +71,7 @@ Rx.observe(user).setAge(user, 3)
 
 <a href='https://ko-fi.com/A160LCC' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://az743702.vo.msecnd.net/cdn/kofi1.png?v=0' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
 
-In your module [![Download](https://api.bintray.com/packages/florent37/maven/retrojsoup-compiler/images/download.svg)](https://bintray.com/florent37/maven/retrojsoup-compiler/_latestVersion)
+In your module [![Download](https://api.bintray.com/packages/florent37/maven/rxobserve-compiler/images/download.svg)](https://bintray.com/florent37/maven/rxobserve-compiler/_latestVersion)
 ```groovy
 compile 'com.github.florent37:rxobserve-annotations:1.0.0'
 compile 'com.github.florent37:rxobserve-compiler:1.0.0'
