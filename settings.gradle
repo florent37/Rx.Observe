@@ -1,0 +1,1 @@
+include ':app', ':rxobserve-annotations', ':rxobserve-compiler'
