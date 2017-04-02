@@ -73,8 +73,8 @@ Rx.observe(user).setAge(user, 3)
 
 In your module [![Download](https://api.bintray.com/packages/florent37/maven/rxobserve-compiler/images/download.svg)](https://bintray.com/florent37/maven/rxobserve-compiler/_latestVersion)
 ```groovy
-compile 'com.github.florent37:rxobserve-annotations:1.0.0'
-compile 'com.github.florent37:rxobserve-compiler:1.0.0'
+provided 'com.github.florent37:rxobserve-annotations:1.0.0'
+annotationProcessor 'com.github.florent37:rxobserve-compiler:1.0.0'
 
 compile 'io.reactivex:rxjava2:2.0.7'
 ```
