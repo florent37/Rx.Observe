@@ -1,7 +1,9 @@
 package com.github.florent37.autoasync.processor;
 
+import com.github.florent37.autoasync.processor.holders.Method;
 import com.github.florent37.autoasync.processor.holders.ObserveHolder;
 import com.github.florent37.rxobserve.annotations.Observe;
+import com.github.florent37.rxobserve.annotations.Single;
 import com.google.auto.service.AutoService;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.FieldSpec;
@@ -13,6 +15,8 @@ import com.squareup.javapoet.TypeSpec;
 import com.squareup.javapoet.TypeVariableName;
 
 import java.io.IOException;
+import java.lang.annotation.Annotation;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +40,7 @@ import io.reactivex.ObservableOnSubscribe;
 
 @SupportedAnnotationTypes({
         "com.github.florent37.rxobserve.annotations.Observe",
+        "com.github.florent37.rxobserve.annotations.Single",
 })
 @SupportedSourceVersion(SourceVersion.RELEASE_7)
 @AutoService(javax.annotation.processing.Processor.class)
@@ -102,29 +107,31 @@ public class RxObserveProcessor extends AbstractProcessor {
     }
 
     private void processAnnotations(RoundEnvironment env) {
-        for (Element element : env.getElementsAnnotatedWith(Observe.class)) {
-            if (processUtils.isClassOrInterface(element)) {
-                processObserveAllMethods(element);
-            } else {
-                processObserveAnnotated(element.getEnclosingElement());
+        for (Class<? extends Annotation> annotation : Arrays.asList(Observe.class, Single.class)) {
+            for (Element element : env.getElementsAnnotatedWith(annotation)) {
+                if (processUtils.isClassOrInterface(element)) {
+                    processObserveAllMethods(element, annotation);
+                } else {
+                    processObserveAnnotated(element.getEnclosingElement(), annotation);
+                }
             }
         }
     }
 
-    private void processObserveAllMethods(Element element) {
+    private void processObserveAllMethods(Element element, Class<? extends Annotation> annotation) {
         final ClassName classFullName = processUtils.fullName(element); //com.github.florent37.sample.MyModel
         final String className = processUtils.className(element); //MyModel
 
         final ObserveHolder observeHolder = new ObserveHolder(element, classFullName, className);
 
         for (Element method : processUtils.getMethods(element)) {
-            observeHolder.addMethod(method);
+            observeHolder.addMethod(method, annotation);
         }
 
         observeHolders.put(classFullName, observeHolder);
     }
 
-    private void processObserveAnnotated(Element element) {
+    private void processObserveAnnotated(Element element, Class<? extends Annotation> annotation) {
         final ClassName classFullName = ClassName.get((TypeElement) element); //com.github.florent37.sample.TutoAndroidFrance
         if (!observeHolders.containsKey(classFullName)) {
             final String className = element.getSimpleName().toString(); //TutoAndroidFrance
@@ -132,12 +139,20 @@ public class RxObserveProcessor extends AbstractProcessor {
             final ObserveHolder observeHolder = new ObserveHolder(element, classFullName, className);
 
             for (Element method : processUtils.getMethods(element)) {
-                if (method.getAnnotation(Observe.class) != null) {
-                    observeHolder.addMethod(method);
+                if (method.getAnnotation(annotation) != null) {
+                    observeHolder.addMethod(method, annotation);
                 }
             }
 
             observeHolders.put(classFullName, observeHolder);
+        } else {
+            final ObserveHolder observeHolder = observeHolders.get(classFullName);
+            for (Element method : processUtils.getMethods(element)) {
+                if (method.getAnnotation(annotation) != null) {
+                    observeHolder.addMethod(method, annotation);
+                }
+            }
+
         }
     }
 
@@ -164,9 +179,24 @@ public class RxObserveProcessor extends AbstractProcessor {
         }
 
 
-        for (Element method : observeHolder.methods) {
+        for (Method methodHolder : observeHolder.methods) {
+
+            final Element method = methodHolder.element;
 
             final TypeName returnType = processUtils.getParameterizedReturn(method).box();
+
+            final Class observableClass;
+            final Class observableOnSubscribeClass;
+            final Class observableEmitterClass;
+            if (methodHolder.annotation.equals(Single.class)) {
+                observableClass = io.reactivex.Single.class;
+                observableOnSubscribeClass = io.reactivex.SingleOnSubscribe.class;
+                observableEmitterClass = io.reactivex.SingleEmitter.class;
+            } else {
+                observableClass = Observable.class;
+                observableOnSubscribeClass = ObservableOnSubscribe.class;
+                observableEmitterClass = ObservableEmitter.class;
+            }
 
             if (processUtils.isVoid(returnType)) {
 
@@ -176,7 +206,7 @@ public class RxObserveProcessor extends AbstractProcessor {
                         .addModifiers(Modifier.PUBLIC)
                         .addTypeVariable(typeVariableName)
                         .addParameter(typeVariableName, Constants.RETURNED_VALUE, Modifier.FINAL)
-                        .returns(ParameterizedTypeName.get(ClassName.get(Observable.class), typeVariableName));
+                        .returns(ParameterizedTypeName.get(ClassName.get(observableClass), typeVariableName));
 
                 final List<VariableElement> params = processUtils.getParams(method);
                 final int paramsSize = params.size();
@@ -187,9 +217,9 @@ public class RxObserveProcessor extends AbstractProcessor {
                 }
 
                 methodBuilder
-                        .addCode("return $T.create(new $T<$T>() {\n", ClassName.get(Observable.class), ClassName.get(ObservableOnSubscribe.class), typeVariableName)
+                        .addCode("return $T.create(new $T<$T>() {\n", ClassName.get(observableClass), ClassName.get(observableOnSubscribeClass), typeVariableName)
                         .addCode("\t\t@$T\n", Override.class)
-                        .addCode("\t\tpublic void subscribe($T<$T> e) throws $T {\n", ClassName.get(ObservableEmitter.class), typeVariableName, Exception.class);
+                        .addCode("\t\tpublic void subscribe($T<$T> e) throws $T {\n", ClassName.get(observableEmitterClass), typeVariableName, Exception.class);
 
                 if (method.getModifiers().contains(Modifier.STATIC)) {
                     methodBuilder.addCode("\t\t\t$T.$L(", target, method.getSimpleName());
@@ -206,16 +236,22 @@ public class RxObserveProcessor extends AbstractProcessor {
                     }
                 }
 
-                methodBuilder
-                        .addStatement("\t\t\te.onNext(($T)$L)", typeVariableName, Constants.RETURNED_VALUE)
-                        .addStatement("\t\t\te.onComplete()")
-                        .addCode("\t\t}\n")
+                if (methodHolder.annotation.equals(Single.class)) {
+                    methodBuilder
+                            .addStatement("\t\t\te.onSuccess(($T)$L)", typeVariableName, Constants.RETURNED_VALUE);
+                } else { //observable
+                    methodBuilder
+                            .addStatement("\t\t\te.onNext(($T)$L)", typeVariableName, Constants.RETURNED_VALUE)
+                            .addStatement("\t\t\te.onComplete()");
+                }
+
+                methodBuilder.addCode("\t\t}\n")
                         .addStatement("})");
                 builder.addMethod(methodBuilder.build());
             } else {
                 final MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(method.getSimpleName().toString())
                         .addModifiers(Modifier.PUBLIC)
-                        .returns(ParameterizedTypeName.get(ClassName.get(Observable.class), returnType));
+                        .returns(ParameterizedTypeName.get(ClassName.get(observableClass), returnType));
 
                 final List<VariableElement> params = processUtils.getParams(method);
                 final int paramsSize = params.size();
@@ -226,14 +262,24 @@ public class RxObserveProcessor extends AbstractProcessor {
                 }
 
                 methodBuilder
-                        .addCode("return $T.create(new $T<$T>() {\n", ClassName.get(Observable.class), ClassName.get(ObservableOnSubscribe.class), returnType)
+                        .addCode("return $T.create(new $T<$T>() {\n", ClassName.get(observableClass), ClassName.get(observableOnSubscribeClass), returnType)
                         .addCode("\t\t@$T\n", Override.class)
-                        .addCode("\t\tpublic void subscribe($T<$T> e) throws $T {\n", ClassName.get(ObservableEmitter.class), returnType, Exception.class);
+                        .addCode("\t\tpublic void subscribe($T<$T> e) throws $T {\n", ClassName.get(observableEmitterClass), returnType, Exception.class);
+
+                final String nextMethod;
+                final boolean addOnComlete;
+                if (methodHolder.annotation.equals(Single.class)) {
+                    nextMethod = "onSuccess";
+                    addOnComlete = false;
+                } else { //observable
+                    nextMethod = "onNext";
+                    addOnComlete = true;
+                }
 
                 if (method.getModifiers().contains(Modifier.STATIC)) {
-                    methodBuilder.addCode("\t\t\te.onNext($T.$L(", target, method.getSimpleName());
+                    methodBuilder.addCode("\t\t\te.$L($T.$L(", nextMethod, target, method.getSimpleName());
                 } else {
-                    methodBuilder.addCode("\t\t\te.onNext($L.$L(", Constants.TARGET, method.getSimpleName());
+                    methodBuilder.addCode("\t\t\te.$L($L.$L(", nextMethod, Constants.TARGET, method.getSimpleName());
                 }
 
                 for (int i = 0; i < paramsSize; i++) {
@@ -244,10 +290,13 @@ public class RxObserveProcessor extends AbstractProcessor {
                     }
                 }
 
-                methodBuilder
-                        .addCode("));\n")
-                        .addStatement("\t\t\te.onComplete()")
-                        .addCode("\t\t}\n")
+                methodBuilder.addCode("));\n");
+
+                if (addOnComlete) {
+                    methodBuilder.addStatement("\t\t\te.onComplete()");
+                }
+
+                methodBuilder.addCode("\t\t}\n")
                         .addStatement("})");
                 builder.addMethod(methodBuilder.build());
             }

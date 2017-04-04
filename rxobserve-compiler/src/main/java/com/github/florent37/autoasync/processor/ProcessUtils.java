@@ -1,11 +1,14 @@
 package com.github.florent37.autoasync.processor;
 
+import com.github.florent37.autoasync.processor.holders.Method;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
@@ -75,9 +78,9 @@ public class ProcessUtils {
         return returnType == TypeName.VOID || ClassName.get("java.lang", "Void").equals(returnType);
     }
 
-    public boolean allMethodsAreStatic(List<Element> methods) {
-        for (Element method : methods) {
-            if(method.getKind() != METHOD || !method.getModifiers().contains(Modifier.STATIC)){
+    public boolean allMethodsAreStatic(Collection<Method> methods) {
+        for (Method method : methods) {
+            if(method.element.getKind() != METHOD || !method.element.getModifiers().contains(Modifier.STATIC)){
                 return false;
             }
         }
