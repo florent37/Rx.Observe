@@ -11,4 +11,5 @@ public interface Constants {
     String CLASS = "Rx";
     String PACKAGE = "com.github.florent37.rxobserve";
     String METHOD_OF = "observe";
+    String BACKPRESSURE_STRATEGY = "backpressureStrategy";
 }

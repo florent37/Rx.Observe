@@ -2,6 +2,8 @@ package com.github.florent37.autoasync.processor;
 
 import com.github.florent37.autoasync.processor.holders.Method;
 import com.github.florent37.autoasync.processor.holders.ObserveHolder;
+import com.github.florent37.rxobserve.annotations.Completable;
+import com.github.florent37.rxobserve.annotations.Flowable;
 import com.github.florent37.rxobserve.annotations.Observe;
 import com.github.florent37.rxobserve.annotations.Single;
 import com.google.auto.service.AutoService;
@@ -34,6 +36,11 @@ import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 
+import io.reactivex.BackpressureStrategy;
+import io.reactivex.CompletableEmitter;
+import io.reactivex.CompletableOnSubscribe;
+import io.reactivex.FlowableEmitter;
+import io.reactivex.FlowableOnSubscribe;
 import io.reactivex.Observable;
 import io.reactivex.ObservableEmitter;
 import io.reactivex.ObservableOnSubscribe;
@@ -41,6 +48,8 @@ import io.reactivex.ObservableOnSubscribe;
 @SupportedAnnotationTypes({
         "com.github.florent37.rxobserve.annotations.Observe",
         "com.github.florent37.rxobserve.annotations.Single",
+        "com.github.florent37.rxobserve.annotations.Flowable",
+        "com.github.florent37.rxobserve.annotations.Completable",
 })
 @SupportedSourceVersion(SourceVersion.RELEASE_7)
 @AutoService(javax.annotation.processing.Processor.class)
@@ -107,7 +116,7 @@ public class RxObserveProcessor extends AbstractProcessor {
     }
 
     private void processAnnotations(RoundEnvironment env) {
-        for (Class<? extends Annotation> annotation : Arrays.asList(Observe.class, Single.class)) {
+        for (Class<? extends Annotation> annotation : Arrays.asList(Observe.class, Single.class, Flowable.class, Completable.class)) {
             for (Element element : env.getElementsAnnotatedWith(annotation)) {
                 if (processUtils.isClassOrInterface(element)) {
                     processObserveAllMethods(element, annotation);
@@ -188,10 +197,19 @@ public class RxObserveProcessor extends AbstractProcessor {
             final Class observableClass;
             final Class observableOnSubscribeClass;
             final Class observableEmitterClass;
+
             if (methodHolder.annotation.equals(Single.class)) {
                 observableClass = io.reactivex.Single.class;
                 observableOnSubscribeClass = io.reactivex.SingleOnSubscribe.class;
                 observableEmitterClass = io.reactivex.SingleEmitter.class;
+            } else if (methodHolder.annotation.equals(Flowable.class)) {
+                observableClass = io.reactivex.Flowable.class;
+                observableOnSubscribeClass = FlowableOnSubscribe.class;
+                observableEmitterClass = FlowableEmitter.class;
+            } else if (methodHolder.annotation.equals(Completable.class)) {
+                observableClass = io.reactivex.Completable.class;
+                observableOnSubscribeClass = CompletableOnSubscribe.class;
+                observableEmitterClass = CompletableEmitter.class;
             } else {
                 observableClass = Observable.class;
                 observableOnSubscribeClass = ObservableOnSubscribe.class;
@@ -203,10 +221,17 @@ public class RxObserveProcessor extends AbstractProcessor {
                 final TypeVariableName typeVariableName = TypeVariableName.get("T");
 
                 final MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(method.getSimpleName().toString())
-                        .addModifiers(Modifier.PUBLIC)
-                        .addTypeVariable(typeVariableName)
-                        .addParameter(typeVariableName, Constants.RETURNED_VALUE, Modifier.FINAL)
-                        .returns(ParameterizedTypeName.get(ClassName.get(observableClass), typeVariableName));
+                        .addModifiers(Modifier.PUBLIC);
+
+                if (methodHolder.annotation.equals(Completable.class)) {
+                    methodBuilder.returns(ClassName.get(observableClass));
+                } else {
+                    methodBuilder
+                            .addParameter(typeVariableName, Constants.RETURNED_VALUE, Modifier.FINAL)
+                            .addTypeVariable(typeVariableName)
+                            .returns(ParameterizedTypeName.get(ClassName.get(observableClass), typeVariableName));
+                }
+
 
                 final List<VariableElement> params = processUtils.getParams(method);
                 final int paramsSize = params.size();
@@ -216,42 +241,70 @@ public class RxObserveProcessor extends AbstractProcessor {
                     methodBuilder.addParameter(TypeName.get(variableElement.asType()), variableElement.getSimpleName().toString(), Modifier.FINAL);
                 }
 
-                methodBuilder
-                        .addCode("return $T.create(new $T<$T>() {\n", ClassName.get(observableClass), ClassName.get(observableOnSubscribeClass), typeVariableName)
-                        .addCode("\t\t@$T\n", Override.class)
-                        .addCode("\t\tpublic void subscribe($T<$T> e) throws $T {\n", ClassName.get(observableEmitterClass), typeVariableName, Exception.class);
+                if (methodHolder.annotation.equals(Flowable.class)) {
+                    methodBuilder.addParameter(ClassName.get(BackpressureStrategy.class), Constants.BACKPRESSURE_STRATEGY, Modifier.FINAL);
+                }
+
+                if (methodHolder.annotation.equals(Completable.class)) {
+                    methodBuilder
+                            .addCode("return $T.create(new $T() {\n", ClassName.get(observableClass), ClassName.get(observableOnSubscribeClass))
+                            .addCode("\t\t@$T\n", Override.class)
+                            .addCode("\t\tpublic void subscribe($T e) throws $T {\n", ClassName.get(observableEmitterClass), Exception.class);
+
+                } else {
+                    methodBuilder
+                            .addCode("return $T.create(new $T<$T>() {\n", ClassName.get(observableClass), ClassName.get(observableOnSubscribeClass), typeVariableName)
+                            .addCode("\t\t@$T\n", Override.class)
+                            .addCode("\t\tpublic void subscribe($T<$T> e) throws $T {\n", ClassName.get(observableEmitterClass), typeVariableName, Exception.class);
+                }
 
                 if (method.getModifiers().contains(Modifier.STATIC)) {
                     methodBuilder.addCode("\t\t\t$T.$L(", target, method.getSimpleName());
                 } else {
                     methodBuilder.addCode("\t\t\t$L.$L(", Constants.TARGET, method.getSimpleName());
                 }
-                for (int i = 0; i < paramsSize; i++) {
-                    final VariableElement variableElement = params.get(i);
-                    methodBuilder.addCode("$L", variableElement.getSimpleName());
-                    if (i < paramsSize - 1) {
-                        methodBuilder.addCode(", ");
-                    } else {
-                        methodBuilder.addCode(");\n");
+
+                if (paramsSize == 0) {
+                    methodBuilder.addCode(");\n");
+                } else {
+                    for (int i = 0; i < paramsSize; i++) {
+                        final VariableElement variableElement = params.get(i);
+                        methodBuilder.addCode("$L", variableElement.getSimpleName());
+                        if (i < paramsSize - 1) {
+                            methodBuilder.addCode(", ");
+                        } else {
+                            methodBuilder.addCode(");\n");
+                        }
                     }
                 }
 
                 if (methodHolder.annotation.equals(Single.class)) {
                     methodBuilder
                             .addStatement("\t\t\te.onSuccess(($T)$L)", typeVariableName, Constants.RETURNED_VALUE);
-                } else { //observable
+                } else if (methodHolder.annotation.equals(Completable.class)) {
+                    methodBuilder
+                            .addStatement("\t\t\te.onComplete()");
+                } else { //observable / Flowable
                     methodBuilder
                             .addStatement("\t\t\te.onNext(($T)$L)", typeVariableName, Constants.RETURNED_VALUE)
                             .addStatement("\t\t\te.onComplete()");
                 }
 
-                methodBuilder.addCode("\t\t}\n")
-                        .addStatement("})");
+                methodBuilder.addCode("\t\t}\n}");
+                if (methodHolder.annotation.equals(Flowable.class)) {
+                    methodBuilder.addCode(",$L", Constants.BACKPRESSURE_STRATEGY);
+                }
+                methodBuilder.addStatement(")");
                 builder.addMethod(methodBuilder.build());
             } else {
                 final MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(method.getSimpleName().toString())
-                        .addModifiers(Modifier.PUBLIC)
-                        .returns(ParameterizedTypeName.get(ClassName.get(observableClass), returnType));
+                        .addModifiers(Modifier.PUBLIC);
+
+                if (methodHolder.annotation.equals(Completable.class)) {
+                    methodBuilder.returns(ClassName.get(observableClass));
+                } else {
+                    methodBuilder.returns(ParameterizedTypeName.get(ClassName.get(observableClass), returnType));
+                }
 
                 final List<VariableElement> params = processUtils.getParams(method);
                 final int paramsSize = params.size();
@@ -261,26 +314,48 @@ public class RxObserveProcessor extends AbstractProcessor {
                     methodBuilder.addParameter(TypeName.get(variableElement.asType()), variableElement.getSimpleName().toString(), Modifier.FINAL);
                 }
 
-                methodBuilder
-                        .addCode("return $T.create(new $T<$T>() {\n", ClassName.get(observableClass), ClassName.get(observableOnSubscribeClass), returnType)
-                        .addCode("\t\t@$T\n", Override.class)
-                        .addCode("\t\tpublic void subscribe($T<$T> e) throws $T {\n", ClassName.get(observableEmitterClass), returnType, Exception.class);
+                if (methodHolder.annotation.equals(Flowable.class)) {
+                    methodBuilder.addParameter(ClassName.get(BackpressureStrategy.class), Constants.BACKPRESSURE_STRATEGY, Modifier.FINAL);
+                }
 
                 final String nextMethod;
                 final boolean addOnComlete;
                 if (methodHolder.annotation.equals(Single.class)) {
                     nextMethod = "onSuccess";
                     addOnComlete = false;
-                } else { //observable
+                } else if (methodHolder.annotation.equals(Completable.class)) {
+                    nextMethod = null;
+                    addOnComlete = true;
+                } else { //observable / Flowable
                     nextMethod = "onNext";
                     addOnComlete = true;
                 }
 
-                if (method.getModifiers().contains(Modifier.STATIC)) {
-                    methodBuilder.addCode("\t\t\te.$L($T.$L(", nextMethod, target, method.getSimpleName());
+                if (nextMethod == null) {
+                    methodBuilder
+                            .addCode("return $T.create(new $T() {\n", ClassName.get(observableClass), ClassName.get(observableOnSubscribeClass))
+                            .addCode("\t\t@$T\n", Override.class)
+                            .addCode("\t\tpublic void subscribe($T e) throws $T {\n", ClassName.get(observableEmitterClass), Exception.class);
+
+                    if (method.getModifiers().contains(Modifier.STATIC)) {
+                        methodBuilder.addCode("\t\t\t$T.$L(", target, method.getSimpleName());
+                    } else {
+                        methodBuilder.addCode("\t\t\t$L.$L(", Constants.TARGET, method.getSimpleName());
+                    }
+
                 } else {
-                    methodBuilder.addCode("\t\t\te.$L($L.$L(", nextMethod, Constants.TARGET, method.getSimpleName());
+                    methodBuilder
+                            .addCode("return $T.create(new $T<$T>() {\n", ClassName.get(observableClass), ClassName.get(observableOnSubscribeClass), returnType)
+                            .addCode("\t\t@$T\n", Override.class)
+                            .addCode("\t\tpublic void subscribe($T<$T> e) throws $T {\n", ClassName.get(observableEmitterClass), returnType, Exception.class);
+
+                    if (method.getModifiers().contains(Modifier.STATIC)) {
+                        methodBuilder.addCode("\t\t\te.$L($T.$L(", nextMethod, target, method.getSimpleName());
+                    } else {
+                        methodBuilder.addCode("\t\t\te.$L($L.$L(", nextMethod, Constants.TARGET, method.getSimpleName());
+                    }
                 }
+
 
                 for (int i = 0; i < paramsSize; i++) {
                     final VariableElement variableElement = params.get(i);
@@ -290,14 +365,26 @@ public class RxObserveProcessor extends AbstractProcessor {
                     }
                 }
 
-                methodBuilder.addCode("));\n");
+                if (nextMethod != null) {
+                    methodBuilder.addCode(")");
+                }
+
+                methodBuilder.addCode(");\n");
+
 
                 if (addOnComlete) {
                     methodBuilder.addStatement("\t\t\te.onComplete()");
                 }
 
-                methodBuilder.addCode("\t\t}\n")
-                        .addStatement("})");
+                methodBuilder.addCode("\t\t}\n");
+                methodBuilder.addCode("\t}\n");
+
+                if (methodHolder.annotation.equals(Flowable.class)) {
+                    methodBuilder.addCode(",$L", Constants.BACKPRESSURE_STRATEGY);
+                }
+
+                methodBuilder.addStatement(")");
+
                 builder.addMethod(methodBuilder.build());
             }
         }
