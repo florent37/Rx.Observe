@@ -76,6 +76,16 @@ Rx.Observable is also compatible with `@Single`, `@Flowable`, `@Completable`
 <a href='https://ko-fi.com/A160LCC' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://az743702.vo.msecnd.net/cdn/kofi1.png?v=0' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
 
 In your module [![Download](https://api.bintray.com/packages/florent37/maven/rxobserve-compiler/images/download.svg)](https://bintray.com/florent37/maven/rxobserve-compiler/_latestVersion)
+
+```groovy
+repositories {
+    google()
+    jcenter()
+    maven { url "https://dl.bintray.com/florent37/maven" }
+    // ...
+}
+```
+
 ```groovy
 provided 'com.github.florent37:rxobserve-annotations:1.0.0'
 annotationProcessor 'com.github.florent37:rxobserve-compiler:1.0.0'
