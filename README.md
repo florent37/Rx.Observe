@@ -101,7 +101,7 @@ compile 'io.reactivex:rxjava2:2.0.7'
 
 Author: Florent Champigny [http://www.florentchampigny.com/](http://www.florentchampigny.com/)
 
-Blog : [http://www.tutos-android-france.com/](http://www.www.tutos-android-france.com/)
+Blog : [http://www.tutos-android-france.com/](http://www.tutos-android-france.com/)
 
 
 <a href="https://goo.gl/WXW8Dc">
