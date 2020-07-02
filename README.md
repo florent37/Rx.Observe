@@ -99,7 +99,7 @@ compile 'io.reactivex:rxjava2:2.0.7'
 ```
 # Credits
 
-Author: Florent Champigny [http://www.florentchampigny.com/](http://www.florentchampigny.com/)
+Author: Florent Champigny
 
 Blog : [http://www.tutos-android-france.com/](http://www.tutos-android-france.com/)
 
